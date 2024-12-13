@@ -1,0 +1,46 @@
+#+title: data-navigator.el
+#+subtitle: Navigate EDN/JSON data structures
+
+
+
+* Usage
+
+*To load data from a file:*
+(require 'data-navigator)
+M-x ~data-navigator-from-file~ RET =path/to/file.edn=
+  
+*To load data from a string:*
+~(data-navigator-from-input "[:line-bottom {:bar \"baz\"}]")~
+~(data-navigator-from-input "{\"foo\": [1, 2, 3]}")~
+
+*After loading, use the following keys to navigate:*
+- <return> or <right>: Dive into the selected value.
+- <backspace> or <left>: Go up one level.
+- C-f: Apply a filter term to narrow down displayed entries.
+- X: Clear the data-navigator buffer.
+- w: Copy the current value to the kill-ring.
+- o/O: Open the value in a new buffer (same window or other window).
+  
+You can also click with mouse-1 on keys/values or breadcrumbs to navigate.
+
+
+** In your Clojure environment
+
+Use add-tap to register a handler that sends tapped data back to
+Emacs. For example, if you’re using CIDER in Emacs, you can rely on
+~cider-interactive-eval~ or similar functions to evaluate Emacs Lisp
+forms from the Clojure side.
+#+begin_src clojure
+(add-tap
+  (fn [v]
+    (let [edn-str (pr-str v)]
+      ;; This line uses cider to call Emacs Lisp code, inserting edn-str into data-navigator.
+      ;; You need to ensure `cider` is running and `data-navigator.el` is loaded in Emacs.
+      (cider-interactive-eval
+        (format "(data-navigator-from-input %S 'input)" edn-str)))))
+#+end_src
+
+Make sure that data-navigator.el is loaded and data-navigator-mode is
+available in Emacs. This sets up a kind of "bridge" so that whenever
+you do (tap> some-data) in Clojure, the data appears in the Emacs
+data-navigator buffer.

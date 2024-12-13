@@ -1,0 +1,15 @@
+{:level1 {:string "hello"
+          :level2 {:integer 123
+                   :level3 {:float 12.34
+                            :level4 {:boolean true
+                                     :level5 {:nil nil
+                                              :level6 {:vector [1 2 3 "four" nil]
+                                                       :level7 {:list (1 "two" true)
+                                                                :level8 {:set #{1 2 3 "deep"}
+                                                                         :level9 {:map {:key "value"
+                                                                                        :num 10
+                                                                                        :bool false
+                                                                                        :nested-map {:a 1
+                                                                                                     :b 2
+                                                                                                     :c {:d 3
+                                                                                                         :e 4}}}}}}}}}}}}}
