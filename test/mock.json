@@ -1,0 +1,14 @@
+{"level1": {
+    "string": "hello",
+    "level2": {"integer": 123,
+               "level3": {"float": 12.34,
+                          "level4": {"boolean": true,
+                                     "level5": {"null": null,
+                                                "level6": {"array": [1, 2, 3, "four", null],
+                                                           "level7": {"object": {"key": "value",
+                                                                                 "num": 10,
+                                                                                 "bool": false,
+                                                                                 "level8": {"nested_object": {"a": 1,
+                                                                                                              "b": 2,
+                                                                                                              "level9": {"deeper_object": {"c": 3,
+                                                                                                                                           "d": 4}}}}}}}}}}}}}

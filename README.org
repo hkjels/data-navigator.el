@@ -1,0 +1,94 @@
+#+title: data-navigator.el
+#+subtitle: Navigate EDN/JSON data structures
+
+
+
+* Usage
+
+*To load data from a file:*  
+M-x ~data-navigator-from-file~ RET =path/to/file.edn=  
+  
+*To load data from a string:*  
+~(data-navigator-from-input "[:line-bottom {:bar \"baz\"}]")~  
+~(data-navigator-from-input "{\"foo\": [1, 2, 3]}")~  
+
+*To start an empty navigator and then feed data later:*  
+~M-x data-navigator~
+  
+*After loading, use the following keys to navigate:*  
+- <return> or <right>: Dive into the selected value if it’s not a leaf.
+- <backspace> or <left>: Go up one level.
+- C-f: Apply a filter term to narrow down displayed entries.
+- X: Clear the data-navigator buffer.
+- w: Copy the current value to the kill-ring.
+- o/O: Open the value in a new buffer (same window or other window).
+- F: Load data from a file (prompts for a filename).
+- I: Load data from a string input (prompts for data).
+  
+Click with mouse-1 on keys/values or breadcrumbs to navigate.
+
+
+** tap> to the navigator
+
+You can use ~add-tap~ to register a handler that sends data from Clojure
+or ClojureScript to Emacs. E.g:
+#+begin_src clojure
+(ns user
+  #?(:clj (:require [gniazdo.core :as g])))
+
+(defn- connect [uri]
+  #?(:clj  (g/connect uri)
+     :cljs (js/WebSocket. uri)))
+
+(defn- send-msg [ws msg]
+  #?(:clj  (g/send-msg ws msg)
+     :cljs (.send ws msg)))
+
+(def ^:private ws
+  (connect "ws://localhost:8081"))
+
+(defn- ->emacs [data]
+  (if (coll? data)
+    (doseq [x data] (send-msg ws (pr-str x)))
+    (send-msg ws (pr-str data))))
+
+(add-tap ->emacs)
+#+end_src
+
+And in Emacs you can now listen to this web-socket using something
+along these lines:
+#+begin_src emacs-lisp
+(require 'websocket)
+
+(defun handle-incoming-data (websocket frame)
+  (let ((data (websocket-frame-text frame)))
+    (data-navigator-from-input data)))
+
+(defvar tap-socket--server nil
+  "The WebSocket server instance.")
+
+(defun tap-socket-start (port)
+  "Start a WebSocket server that listens for `tap>` calls on the specified PORT."
+  (interactive "nPort: ")
+  (unless (process-live-p tap-socket--server)
+    (let ((port (or port 8081)))
+      (setq tap-socket--server
+            (websocket-server
+             port
+             :on-message 'handle-incoming-data
+             :on-error (lambda (_websocket type err)
+                         (message "WebSocket error on %s: %s" type err))
+             :on-close (lambda (_websocket)
+                         (message "WebSocket closed")))))
+    (message (format "WebSocket server started on port %d" port))))
+
+(defun tap-socket-stop ()
+  "Stop the running WebSocket server."
+  (interactive)
+  (when (process-live-p tap-socket--server)
+    (delete-process tap-socket--server)
+    (setq tap-socket--server nil)
+    (message "WebSocket server stopped")))
+#+end_src
+
+Note that the ~websocket~ library is not part of the native Emacs distribution.
