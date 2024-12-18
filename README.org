@@ -1,21 +1,34 @@
 #+title: data-navigator.el
 #+subtitle: Navigate EDN/JSON data structures
 
+* Installation
 
+  data-navigator is not on MELPA yet, but in recent (29+) Emacs versions you can install it using
+
+  #+BEGIN_SRC emacs-lisp
+    (use-package data-navigator
+      :init
+      (unless (package-installed-p 'data-navigator)
+        (package-vc-install
+         '(data-navigator
+           :vc-backend Git
+           :url "https://github.com/hkjels/data-navigator.el/"
+           :branch "main"))))
+  #+END_SRC
 
 * Usage
 
-*To load data from a file:*  
-M-x ~data-navigator-from-file~ RET =path/to/file.edn=  
-  
-*To load data from a string:*  
-~(data-navigator-from-input "[:line-bottom {:bar \"baz\"}]")~  
-~(data-navigator-from-input "{\"foo\": [1, 2, 3]}")~  
+*To load data from a file:*
+M-x ~data-navigator-from-file~ RET =path/to/file.edn=
 
-*To start an empty navigator and then feed data later:*  
+*To load data from a string:*
+~(data-navigator-from-input "[:line-bottom {:bar \"baz\"}]")~
+~(data-navigator-from-input "{\"foo\": [1, 2, 3]}")~
+
+*To start an empty navigator and then feed data later:*
 ~M-x data-navigator~
-  
-*After loading, use the following keys to navigate:*  
+
+*After loading, use the following keys to navigate:*
 - <return> or <right>: Dive into the selected value if it’s not a leaf.
 - <backspace> or <left>: Go up one level.
 - C-f: Apply a filter term to narrow down displayed entries.
@@ -24,7 +37,7 @@ M-x ~data-navigator-from-file~ RET =path/to/file.edn=
 - o/O: Open the value in a new buffer (same window or other window).
 - F: Load data from a file (prompts for a filename).
 - I: Load data from a string input (prompts for data).
-  
+
 Click with mouse-1 on keys/values or breadcrumbs to navigate.
 
 
