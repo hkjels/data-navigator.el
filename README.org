@@ -16,6 +16,19 @@
            :branch "main"))))
   #+END_SRC
 
+  otherwise, you can use something like Quelpa
+  #+BEGIN_SRC emacs-lisp
+    (use-package data-navigator
+      :defer t
+      :quelpa
+      (data-navigator :fetcher github :repo "hkjels/data-navigator.el")
+      :config
+      ;; if you want to use tap WebSocket server
+      (require 'data-navigator-tap))
+  #+END_SRC
+
+  Elpaca or Straight.
+
 * Usage
 
 *To load data from a file:*
