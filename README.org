@@ -29,14 +29,14 @@ M-x ~data-navigator-from-file~ RET =path/to/file.edn=
 ~M-x data-navigator~
 
 *After loading, use the following keys to navigate:*
-- <return> or <right>: Dive into the selected value if it’s not a leaf.
-- <backspace> or <left>: Go up one level.
-- C-f: Apply a filter term to narrow down displayed entries.
-- X: Clear the data-navigator buffer.
-- w: Copy the current value to the kill-ring.
-- o/O: Open the value in a new buffer (same window or other window).
-- F: Load data from a file (prompts for a filename).
-- I: Load data from a string input (prompts for data).
+- <return> or <right>: Dive into the selected value if it’s not a leaf(data-navigator-enter).
+- <backspace> or <left>: Go up one level (data-navigator-up).
+- C-f: Apply a filter term to narrow down displayed entries (data-navigator-filter).
+- X: Clear the data-navigator buffer (data-navigator-clear-buffer).
+- w: Copy the current value to the kill-ring (data-navigator-copy-value).
+- o/O: Open the value in a new buffer (data-navigator-open-value/data-navigator-open-value-other-window).
+- F: Load data from a file (data-navigator-from-file).
+- I: Load data from a string input (data-navigator-from-input).
 
 Click with mouse-1 on keys/values or breadcrumbs to navigate.
 

@@ -156,7 +156,6 @@ If nil, auto-detection is used:
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "F") #'data-navigator-from-file)
     (define-key map (kbd "I") #'data-navigator-from-input)
-    (define-key map (kbd "RET") #'data-navigator-enter)
     (define-key map (kbd "<return>") #'data-navigator-enter)
     (define-key map (kbd "<backspace>") #'data-navigator-up)
     (define-key map (kbd "<left>") #'data-navigator-up)
@@ -441,7 +440,6 @@ font-locks the buffer, and then copies the text properties back to a string."
     (insert snippet)
     (funcall mode)
     (font-lock-ensure (point-min) (point-max))
-    (redisplay)
     (buffer-substring (point-min) (point-max))))
 
 (defun data-navigator--mode-by-format (format)
@@ -467,11 +465,12 @@ If NODE is annotated, return the :data-navigator--data part; otherwise return NO
     node))
 
 (defun data-navigator--get-node (path data)
-  "Get the node at PATH in DATA, unwrapping any annotated data before returning."
+  "Get the node at PATH in DATA and return it fully unwrapped."
   (let ((node data))
     (dolist (p path node)
-      (setq node (data-navigator--get-child node p))
+      (setq node (data-navigator--get-child (data-navigator--unwrap-node node) p))
       (setq node (data-navigator--unwrap-node node)))
+    ;; Ensure final node is unwrapped
     (data-navigator--unwrap-node node)))
 
 (defun data-navigator--insert-line (key value)
@@ -513,19 +512,18 @@ This ensures deeper navigation works with raw data."
                 "\n")))))
 
 (defun data-navigator--get-child (node key)
-  "Get child KEY from NODE."
+  "Get child KEY from NODE.
+- If NODE is a hash-table, KEY should be a hash key.
+- If NODE is a vector or a list, KEY should be an integer index."
   (cond
    ((hash-table-p node)
     (gethash key node))
    ((vectorp node)
-    (when (and (numberp key) (>= key 0) (< key (length node)))
+    (when (and (integerp key) (>= key 0) (< key (length node)))
       (aref node key)))
-   ((plistp node)
-    (plist-get node key))
    ((consp node)
-    (when (and (numberp key) (>= key 0))
-      (nth key node)))
-   (t nil)))
+    (when (integerp key)
+      (nth key node)))))
 
 (defun data-navigator--get-node (path data)
   "Get the node at PATH in DATA."
@@ -535,13 +533,8 @@ This ensures deeper navigation works with raw data."
 
 (defun data-navigator--node-entries (node)
   "Return entries of NODE as a flat list [k1 v1 k2 v2 ...].
-If top-level entries are annotated with :data-navigator--data
-and :data-navigator--timestamp, handle them accordingly."
-  (when (and (vectorp node)
-             (cl-every (lambda (x) (and (listp x) (plist-get x :data-navigator--data))) node))
-    (cl-loop for i from 0 below (length node)
-             for entry = (aref node i)
-             append (list i entry)))
+Always treat lists as indexed sequences. 
+This ensures that EDN lists are handled uniformly, just like vectors."
   (cond
    ((null node) nil)
    ((hash-table-p node)
@@ -553,13 +546,8 @@ and :data-navigator--timestamp, handle them accordingly."
    ((vectorp node)
     (cl-loop for i from 0 below (length node)
              append (list i (aref node i))))
-   ((plistp node)
-    node)
-   ((and (consp node) (cl-every #'consp node))
-    ;; Alist
-    (apply #'append (mapcar (lambda (pair) (list (car pair) (cdr pair))) node)))
    ((consp node)
-    ;; Plain list
+    ;; Treat all lists as indexed sequences:
     (cl-loop for val in node
              for i from 0
              append (list i val)))
@@ -607,7 +595,6 @@ and :data-navigator--timestamp, handle them accordingly."
                      (filtered (data-navigator--filter-entries entries)))
                 ;; Inside structures, just display as-is, no sorting by timestamp.
                 (data-navigator--insert-entries filtered))))
-
           (goto-char (point-min)))))))
 
 (defun data-navigator-clear-buffer ()
