@@ -46,26 +46,29 @@ Click with mouse-1 on keys/values or breadcrumbs to navigate.
 You can use ~add-tap~ to register a handler that sends data from Clojure
 or ClojureScript to Emacs. E.g:
 #+begin_src clojure
-(ns user
-  #?(:clj (:require [gniazdo.core :as g])))
+  (ns user
+    #?(:bb (:require [babashka.http-client.websocket :as ws])
+       :clj (:require [gniazdo.core :as g])))
 
-(defn- connect [uri]
-  #?(:clj  (g/connect uri)
-     :cljs (js/WebSocket. uri)))
+  (defn- connect [uri]
+    #?(:bb   (ws/websocket {:uri uri})
+       :clj  (g/connect uri)
+       :cljs (js/WebSocket. uri)))
 
-(defn- send-msg [ws msg]
-  #?(:clj  (g/send-msg ws msg)
-     :cljs (.send ws msg)))
+  (defn- send-msg [ws msg]
+    #?(:bb   (ws/send! ws msg)
+       :clj  (g/send-msg ws msg)
+       :cljs (.send ws msg)))
 
-(def ^:private ws
-  (connect "ws://localhost:8081"))
+  (def ^:private ws
+    (connect "ws://localhost:8081"))
 
-(defn- ->emacs [data]
-  (if (coll? data)
-    (doseq [x data] (send-msg ws (pr-str x)))
-    (send-msg ws (pr-str data))))
+  (defn- ->emacs [data]
+    (if (coll? data)
+      (doseq [x data] (send-msg ws (pr-str x)))
+      (send-msg ws (pr-str data))))
 
-(add-tap ->emacs)
+  (add-tap ->emacs)
 #+end_src
 
 And in Emacs you can now listen to this web-socket using something
