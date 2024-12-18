@@ -59,7 +59,7 @@
       (setq data-navigator-tap--server
             (websocket-server
              port
-             :on-message 'handle-incoming-data
+             :on-message 'data-navigator-tap--handle-incoming-data
              :on-error (lambda (_websocket type err)
                          (message "WebSocket error on %s: %s" type err))
              :on-close (lambda (_websocket)
