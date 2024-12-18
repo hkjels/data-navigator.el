@@ -64,9 +64,7 @@ or ClojureScript to Emacs. E.g:
     (connect "ws://localhost:8081"))
 
   (defn- ->emacs [data]
-    (if (coll? data)
-      (doseq [x data] (send-msg ws (pr-str x)))
-      (send-msg ws (pr-str data))))
+    (send-msg ws (pr-str data)))
 
   (add-tap ->emacs)
 #+end_src
