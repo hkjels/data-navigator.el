@@ -440,7 +440,8 @@ font-locks the buffer, and then copies the text properties back to a string."
   (with-temp-buffer
     (insert snippet)
     (funcall mode)
-    (font-lock-ensure)
+    (font-lock-ensure (point-min) (point-max))
+    (redisplay)
     (buffer-substring (point-min) (point-max))))
 
 (defun data-navigator--mode-by-format (format)
@@ -458,19 +459,33 @@ font-locks the buffer, and then copies the text properties back to a string."
             'json-mode
           'javascript-mode)))))
 
+(defun data-navigator--unwrap-node (node)
+  "Return NODE unwrapped if it is annotated with :data-navigator--data.
+If NODE is annotated, return the :data-navigator--data part; otherwise return NODE as is."
+  (if (and (listp node) (plist-get node :data-navigator--data))
+      (plist-get node :data-navigator--data)
+    node))
+
+(defun data-navigator--get-node (path data)
+  "Get the node at PATH in DATA, unwrapping any annotated data before returning."
+  (let ((node data))
+    (dolist (p path node)
+      (setq node (data-navigator--get-child node p))
+      (setq node (data-navigator--unwrap-node node)))
+    (data-navigator--unwrap-node node)))
+
 (defun data-navigator--insert-line (key value)
   "Insert a line with KEY and VALUE, aligned in two columns.
-If VALUE is annotated with :data-navigator--data and :data-navigator--timestamp, include the timestamp in the help-echo."
+If VALUE is annotated, unwrap it before inserting.
+This ensures deeper navigation works with raw data."
   (let ((left-col-width data-navigator-column-width)
         (key-str (if (not data-navigator--path)
                      (format "%s" (or data-navigator--filename data-navigator--buffer-type))
                    (data-navigator--format-key key)))
-        (real-value value)
-        (timestamp nil))
-    (when (and (listp value) (plist-get value :data-navigator--data))
-      (setq timestamp (plist-get value :data-navigator--timestamp))
-      (setq real-value (plist-get value :data-navigator--data)))
-
+        ;; Unwrap VALUE right here to ensure we always store real data in text properties.
+        (real-value (data-navigator--unwrap-node value))
+        (timestamp (when (and (listp value) (plist-get value :data-navigator--timestamp))
+                     (plist-get value :data-navigator--timestamp))))
     (let ((val-str (data-navigator--fontify-snippet
                     (data-navigator--value-to-string real-value)
                     (data-navigator--mode-by-format data-navigator--format)))
@@ -484,14 +499,14 @@ If VALUE is annotated with :data-navigator--data and :data-navigator--timestamp,
         (insert (propertize (truncate-string-to-width key-str left-col-width 0 ?\s)
                             'face 'font-lock-keyword-face
                             'data-navigator-key key
-                            'data-navigator-value value
+                            'data-navigator-value real-value
                             'mouse-face 'highlight
                             'help-echo help-text
                             'keymap line-map)
                 " "
                 (propertize val-str
                             'data-navigator-key key
-                            'data-navigator-value value
+                            'data-navigator-value real-value
                             'mouse-face 'highlight
                             'help-echo help-text
                             'keymap line-map)
