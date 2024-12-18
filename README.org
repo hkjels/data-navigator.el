@@ -43,11 +43,10 @@ Click with mouse-1 on keys/values or breadcrumbs to navigate.
 
 ** tap> to the navigator
 
-You can use ~add-tap~ to register a handler that sends data from Clojure
-or ClojureScript to Emacs. E.g:
+You can use ~add-tap~ to register a handler that sends data from Clojure, Babashka or ClojureScript to Emacs. E.g:
 #+begin_src clojure
   (ns user
-    #?(:bb (:require [babashka.http-client.websocket :as ws])
+    #?(:bb  (:require [babashka.http-client.websocket :as ws])
        :clj (:require [gniazdo.core :as g])))
 
   (defn- connect [uri]
@@ -69,40 +68,15 @@ or ClojureScript to Emacs. E.g:
   (add-tap ->emacs)
 #+end_src
 
-And in Emacs you can now listen to this web-socket using something
-along these lines:
+And in Emacs you can now listen to this web-socket using ~data-navigator-tap.el~
+
 #+begin_src emacs-lisp
-(require 'websocket)
+  (require 'data-navigator-tap)
 
-(defun handle-incoming-data (websocket frame)
-  (let ((data (websocket-frame-text frame)))
-    (data-navigator-from-input data)))
-
-(defvar tap-socket--server nil
-  "The WebSocket server instance.")
-
-(defun tap-socket-start (port)
-  "Start a WebSocket server that listens for `tap>` calls on the specified PORT."
-  (interactive "nPort: ")
-  (unless (process-live-p tap-socket--server)
-    (let ((port (or port 8081)))
-      (setq tap-socket--server
-            (websocket-server
-             port
-             :on-message 'handle-incoming-data
-             :on-error (lambda (_websocket type err)
-                         (message "WebSocket error on %s: %s" type err))
-             :on-close (lambda (_websocket)
-                         (message "WebSocket closed")))))
-    (message (format "WebSocket server started on port %d" port))))
-
-(defun tap-socket-stop ()
-  "Stop the running WebSocket server."
-  (interactive)
-  (when (process-live-p tap-socket--server)
-    (delete-process tap-socket--server)
-    (setq tap-socket--server nil)
-    (message "WebSocket server stopped")))
+  (data-navigator-tap-mode t)
+  ;; or just use M-x data-navigator-tap-mode
 #+end_src
+
+By default tap WebSocket server listens on port 8081, but you can customize it with defcustom ~data-navigator-tap-server-port~.
 
 Note that the ~websocket~ library is not part of the native Emacs distribution.
