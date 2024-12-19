@@ -56,7 +56,21 @@ Click with mouse-1 on keys/values or breadcrumbs to navigate.
 
 ** tap> to the navigator
 
-You can use ~add-tap~ to register a handler that sends data from Clojure, Babashka or ClojureScript to Emacs. E.g:
+Start tap WebSocket server using ~data-navigator-tap.el~
+
+#+begin_src emacs-lisp
+  (require 'data-navigator-tap)
+
+  (data-navigator-tap-mode t)
+  ;; or just use M-x data-navigator-tap-mode
+#+end_src
+
+By default tap WebSocket server listens on port 8081, but you can customize it with defcustom ~data-navigator-tap-server-port~.
+
+Note that the ~websocket~ library is not part of the native Emacs distribution.
+
+
+Now you can use ~add-tap~ to register a handler that sends data from Clojure, Babashka or ClojureScript to Emacs. E.g:
 #+begin_src clojure
   (ns user
     #?(:bb  (:require [babashka.http-client.websocket :as ws])
@@ -79,17 +93,8 @@ You can use ~add-tap~ to register a handler that sends data from Clojure, Babash
     (send-msg ws (pr-str data)))
 
   (add-tap ->emacs)
+
+  (comment
+    (tap> {:some {:test ["data"]}})
+    )
 #+end_src
-
-And in Emacs you can now listen to this web-socket using ~data-navigator-tap.el~
-
-#+begin_src emacs-lisp
-  (require 'data-navigator-tap)
-
-  (data-navigator-tap-mode t)
-  ;; or just use M-x data-navigator-tap-mode
-#+end_src
-
-By default tap WebSocket server listens on port 8081, but you can customize it with defcustom ~data-navigator-tap-server-port~.
-
-Note that the ~websocket~ library is not part of the native Emacs distribution.

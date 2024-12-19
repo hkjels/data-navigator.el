@@ -23,7 +23,7 @@
 ;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
-;; run M-x tap-socket-start
+;; use M-x data-navigator-tap-mode to turn on the server
 ;;
 
 ;;; Code:
