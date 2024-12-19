@@ -43,7 +43,7 @@
 ;; Click with mouse-1 on keys/values or breadcrumbs to navigate.
 ;;
 ;; **Customizations:**
-;; - `data-navigator-entries-direction`: Whether to prepend or append the entries.
+;; - `data-navigator-top-level-display-order`: Whether to bottom-up or top-down the entries.
 ;; - `data-navigator-highlight-line`: Highlight the current line.
 ;; - `data-navigator-column-width`: Adjust how keys are aligned in the buffer.
 ;; - `data-navigator-auto-refresh-interval`: Set how often to auto-refresh at the top-level.
@@ -72,13 +72,13 @@
   :type 'string
   :group 'data-navigator)
 
-(defcustom data-navigator-entries-direction 'append
-  "Determines how entries are interpreted and displayed.
+(defcustom data-navigator-top-level-display-order 'bottom-up
+  "Determines the display order of entries at the top level of the Data Navigator.
 Possible values are:
-- `append`  : Display entries in the order they were inserted.
-- `prepend` : Display entries in reverse of the order they were inserted."
-  :type '(choice (const :tag "Display entries in insertion order" append)
-                 (const :tag "Display entries in reverse insertion order" prepend))
+- `top-down`  : Display entries in the order they were inserted.
+- `bottom-up` : Display entries in reverse of the order they were inserted."
+  :type '(choice (const :tag "Display entries from top to bottom" top-down)
+                 (const :tag "Display entries from bottom to top" bottom-up))
   :group 'data-navigator)
 
 (defcustom data-navigator-preferred-edn-mode nil
@@ -127,7 +127,7 @@ If nil, auto-detection is used:
   '((t :foreground "orange red" :weight bold))
   "Face used in mode line to indicate an active filter.")
 
-(defvar-local data-navigator--current-data nil
+(defvar-local data-navigator--current-data (make-vector 0 nil)
   "All current top-level data items.  A vector of EDN/JSON data structures.")
 
 (defvar-local data-navigator--path nil
@@ -136,14 +136,11 @@ If nil, auto-detection is used:
 (defvar-local data-navigator--current-filter nil
   "Current filter string for entries.  If non-nil, entries are filtered to those that match this string.")
 
-(defvar-local data-navigator--buffer-type 'file
-  "Indicates the source of the data in this buffer: 'file, or 'input.")
+(defvar-local data-navigator--source 'input
+  "Indicates the source of the data in this buffer.  Can be any string.")
 
-(defvar-local data-navigator--filename nil
-  "Name of the file from which data was loaded, if any, in this buffer.")
-
-(defvar-local data-navigator--top-level-entered nil
-  "Non-nil means we have entered into a chosen top-level structure.")
+(defvar-local data-navigator--in-entry nil
+  "Non-nil means we have entered into a structure.")
 
 (defvar-local data-navigator--format nil
   "The data-format that was parsed.")
@@ -151,7 +148,6 @@ If nil, auto-detection is used:
 (defvar-local data-navigator--auto-refresh-timer nil
   "Timer for auto-refreshing the display.")
 
-;; TODO Add bindings for data-navigator-from-file and data-navigator-from-input
 (defvar data-navigator-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "F") #'data-navigator-from-file)
@@ -182,38 +178,38 @@ If nil, auto-detection is used:
 ;; Timer
 
 (defun data-navigator--start-auto-refresh ()
-  "Start auto-refresh if `data-navigator--top-level-entered` is t."
+  "Start auto-refresh if `data-navigator--in-entry` is nil."
   (when (and data-navigator-auto-refresh-interval
-             data-navigator--top-level-entered
+             (not data-navigator--in-entry)
              (not data-navigator--auto-refresh-timer))
-    (setq data-navigator--auto-refresh-timer
-          (run-with-timer data-navigator-auto-refresh-interval
-                          data-navigator-auto-refresh-interval
-                          (lambda (buf)
-                            (when (buffer-live-p buf)
-                              (with-current-buffer buf
-                                (when (and data-navigator--top-level-entered
-                                           (null data-navigator--path))
-                                  (data-navigator--draw)))))
-                          (current-buffer)))))
+    (setq-local data-navigator--auto-refresh-timer
+                (run-with-timer data-navigator-auto-refresh-interval
+                                data-navigator-auto-refresh-interval
+                                (lambda (buf)
+                                  (when (buffer-live-p buf)
+                                    (with-current-buffer buf
+                                      (when (and data-navigator--in-entry
+                                                 (null data-navigator--path))
+                                        (data-navigator--draw)))))
+                                (current-buffer)))))
 
 (defun data-navigator--stop-auto-refresh ()
   "Stop the auto-refresh timer."
   (when data-navigator--auto-refresh-timer
     (cancel-timer data-navigator--auto-refresh-timer)
-    (setq data-navigator--auto-refresh-timer nil)))
+    (setq-local data-navigator--auto-refresh-timer nil)))
 
 ;; Navigation
 
 (defun data-navigator--go-to-path (path)
   "Go directly to PATH."
-  (setq data-navigator--path path)
+  (setq-local data-navigator--path path)
   (if (null path)
-      (setq data-navigator--top-level-entered nil)
-    (setq data-navigator--top-level-entered t))
-  (if data-navigator--top-level-entered
-      (data-navigator--start-auto-refresh)
-    (data-navigator--stop-auto-refresh))
+      (setq-local data-navigator--in-entry nil)
+    (setq-local data-navigator--in-entry t))
+  (if data-navigator--in-entry
+      (data-navigator--stop-auto-refresh)
+    (data-navigator--start-auto-refresh))
   (data-navigator--draw))
 
 (defun data-navigator--leaf-node-p (node)
@@ -224,46 +220,42 @@ If nil, auto-detection is used:
 (defun data-navigator-enter ()
   "Enter the value at point."
   (interactive)
+  (setq-local data-navigator--in-entry t)
   (let ((val (get-text-property (point) 'data-navigator-value))
         (key (get-text-property (point) 'data-navigator-key)))
-    (when val
-      (if (data-navigator--leaf-node-p val)
-          (user-error "This is a leaf node.  There’s nowhere deeper to navigate")
-        (cond
-         ((and (null data-navigator--path)
-               (not data-navigator--top-level-entered))
-          ;; Entering a top-level item:
-          (setq data-navigator--path (list key))
-          (setq data-navigator--top-level-entered t)
-          (data-navigator--start-auto-refresh)
-          (data-navigator--draw))
-         (t
-          ;; Normal navigation: descend deeper
-          (setq data-navigator--path (append data-navigator--path (list key)))
-          (data-navigator--draw)))))))
+    (if val
+        (if (data-navigator--leaf-node-p val)
+            (user-error "This is a leaf node.  There’s nowhere deeper to navigate")
+          (cond
+           ((not data-navigator--in-entry)
+            ;; Entering a top-level item:
+            (setq-local data-navigator--path (list key))
+            (data-navigator--draw))
+           (t
+            ;; Normal navigation: descend deeper
+            (setq-local data-navigator--path (append data-navigator--path (list key)))
+            (data-navigator--draw))))
+      (user-error "Point must be on a node in the data-navigator"))))
 
 (defun data-navigator-up ()
   "Go up one level."
   (interactive)
   (cond
-   ((and data-navigator--top-level-entered
+   ((and data-navigator--in-entry
          (<= (length data-navigator--path) 1))
     ;; Going up from the first chosen top-level item back to top-level listing
-    (setq data-navigator--path nil)
-    (setq data-navigator--top-level-entered nil)
-    (data-navigator--stop-auto-refresh)
-    (data-navigator--draw))
+    (setq-local data-navigator--path nil
+                data-navigator--in-entry nil))
    ((and data-navigator--path
          (> (length data-navigator--path) 1))
     ;; Just go one level up in nested structure
-    (setq data-navigator--path (butlast data-navigator--path))
-    (data-navigator--draw))
-   ((and (null data-navigator--path)
-         data-navigator--top-level-entered)
+    (setq-local data-navigator--path (butlast data-navigator--path)
+                data-navigator--in-entry t))
+   (data-navigator--in-entry
     ;; If we are at top-level of a file's single structure (entered), go back to not entered
-    (setq data-navigator--top-level-entered nil)
-    (data-navigator--stop-auto-refresh)
-    (data-navigator--draw))))
+    (setq-local data-navigator--path nil
+                data-navigator--in-entry nil)))
+  (data-navigator--draw))
 
 ;; Mode-line
 
@@ -282,7 +274,7 @@ If nil, auto-detection is used:
   "Prompt the user for a FILTER-TERM to filter the current entries.
 If FILTER-TERM is empty, clear any active filter."
   (interactive (list (read-string "Filter entries by: ")))
-  (setq data-navigator--current-filter (if (string-empty-p filter-term) nil filter-term))
+  (setq-local data-navigator--current-filter (if (string-empty-p filter-term) nil filter-term))
   (data-navigator--update-mode-lighter)
   (data-navigator--draw))
 
@@ -299,9 +291,7 @@ Return only those (k,v) pairs for which either the key or value matches the filt
 (defun data-navigator-clear-filter ()
   "Clear the current filter and redraw."
   (interactive)
-  (setq data-navigator--current-filter nil)
-  (data-navigator--update-mode-lighter)
-  (data-navigator--draw))
+  (data-navigator-filter ""))
 
 (defun data-navigator--entry-matches-filter (key value)
   "Return non-nil if KEY or VALUE matches `data-navigator--current-filter`."
@@ -313,22 +303,25 @@ Return only those (k,v) pairs for which either the key or value matches the filt
 
 ;; Value Interaction
 
+(defun data-navigator--value-to-string (value fmt)
+  "Convert VALUE to a string representation for display according to FMT."
+  (if (equal fmt 'edn)
+      (parseedn-print-str value)
+    (json-encode value)))
+
 (defun data-navigator-copy-value ()
   "Copy the value at point to the kill ring."
   (interactive)
   (let ((val (get-text-property (point) 'data-navigator-value)))
     (when val
-      (let ((text (if (eq data-navigator--format 'edn)
-                      (parseedn-print-str val)
-                    (json-encode val))))
-        (kill-new text)))))
+      (kill-new (data-navigator--value-to-string val data-navigator--format)))))
 
 (defun data-navigator--value-buffer ()
   "Create a buffer for inspecting the value at point."
   (let ((val (get-text-property (point) 'data-navigator-value)))
     (when val
       (let ((buf (get-buffer-create data-navigator-value-buffer-name))
-            (val (data-navigator--fontify-snippet val (data-navigator--mode-by-format data-navigator--format))))
+            (val (data-navigator--fontify-snippet val data-navigator--format)))
         (with-current-buffer buf
           (erase-buffer)
           (insert val)
@@ -370,7 +363,7 @@ Return only those (k,v) pairs for which either the key or value matches the filt
     (cl-loop for i from 1 to (length parts)
              do (push (data-navigator--make-crumb
                        (if (eql i 1)
-                           (format "%s" (or data-navigator--filename data-navigator--buffer-type))
+                           (format "%s" data-navigator--source)
                          (format "%s" (nth (1- i) parts)))
                        (cl-subseq parts 0 i)) acc))
     (mapconcat #'identity (reverse acc) " > ")))
@@ -423,25 +416,6 @@ Return only those (k,v) pairs for which either the key or value matches the filt
   (mouse-set-point event)
   (data-navigator-enter))
 
-(defun data-navigator--value-to-string (value)
-  "Convert VALUE to a string representation for display."
-  (if (equal data-navigator--format 'edn)
-      (parseedn-print-str value)
-    (json-encode value)))
-
-(defun data-navigator--fontify-snippet (snippet mode)
-  "Return SNIPPET as propertized string as if highlighted by MODE.
-
-MODE should be a symbol like `edn-mode` or `json-mode`.
-
-This function creates a temporary buffer, inserts SNIPPET, turns on MODE,
-font-locks the buffer, and then copies the text properties back to a string."
-  (with-temp-buffer
-    (insert snippet)
-    (funcall mode)
-    (font-lock-ensure (point-min) (point-max))
-    (buffer-substring (point-min) (point-max))))
-
 (defun data-navigator--mode-by-format (format)
   "Return the major mode symbol for highlighting based on FORMAT."
   (cond
@@ -457,6 +431,19 @@ font-locks the buffer, and then copies the text properties back to a string."
             'json-mode
           'javascript-mode)))))
 
+(defun data-navigator--fontify-snippet (snippet fmt)
+  "Return SNIPPET highlighted according to FMT.
+
+FORMAT should be a symbol like `edn` or `json`.
+
+This function creates a temporary buffer, inserts SNIPPET, turns on MODE,
+font-locks the buffer, and then copies the text properties back to a string."
+  (with-temp-buffer
+    (insert (data-navigator--value-to-string snippet fmt))
+    (funcall (data-navigator--mode-by-format fmt))
+    (font-lock-ensure)
+    (buffer-substring (point-min) (point-max))))
+
 (defun data-navigator--unwrap-node (node)
   "Return NODE unwrapped if it is annotated with :data-navigator--data.
 If NODE is annotated, return the :data-navigator--data part; otherwise return NODE as is."
@@ -468,33 +455,30 @@ If NODE is annotated, return the :data-navigator--data part; otherwise return NO
   "Get the node at PATH in DATA and return it fully unwrapped."
   (let ((node data))
     (dolist (p path node)
-      (setq node (data-navigator--get-child (data-navigator--unwrap-node node) p))
-      (setq node (data-navigator--unwrap-node node)))
-    ;; Ensure final node is unwrapped
+      (setq node (data-navigator--get-child node p)))
     (data-navigator--unwrap-node node)))
 
 (defun data-navigator--insert-line (key value)
-  "Insert a line with KEY and VALUE, aligned in two columns.
-If VALUE is annotated, unwrap it before inserting.
-This ensures deeper navigation works with raw data."
+  "Insert a line with KEY and VALUE, aligned in two columns."
   (let ((left-col-width data-navigator-column-width)
-        (key-str (if (not data-navigator--path)
-                     (format "%s" (or data-navigator--filename data-navigator--buffer-type))
-                   (data-navigator--format-key key)))
-        ;; Unwrap VALUE right here to ensure we always store real data in text properties.
+        (key-str (format "%s" (if (and (listp value) (plist-get value :data-navigator--source))
+                                  (plist-get value :data-navigator--source)
+                                (data-navigator--format-key key))))
         (real-value (data-navigator--unwrap-node value))
         (timestamp (when (and (listp value) (plist-get value :data-navigator--timestamp))
                      (plist-get value :data-navigator--timestamp))))
-    (let ((val-str (data-navigator--fontify-snippet
-                    (data-navigator--value-to-string real-value)
-                    (data-navigator--mode-by-format data-navigator--format)))
+    (when (and (listp value) (plist-get value :data-navigator--source))
+      (setq-local data-navigator--source (plist-get value :data-navigator--source)))
+    (when (and (listp value) (plist-get value :data-navigator--format))
+      (setq-local data-navigator--format (plist-get value :data-navigator--format)))
+    (let ((val-str (data-navigator--fontify-snippet real-value data-navigator--format))
           (line-map (make-sparse-keymap)))
       (define-key line-map [mouse-1] #'data-navigator--mouse-click)
-      (let ((help-text (concat "Click or RET to enter this value"
-                               (when timestamp
-                                 (format " (%s)"
-                                         (format-time-string "%Y-%m-%d %H:%M:%S"
-                                                             (seconds-to-time timestamp)))))))
+      (let* ((timestamp-text (or (when timestamp
+                                   (format " (%s)"
+                                           (format-time-string "%Y-%m-%d %H:%M:%S"
+                                                               (seconds-to-time timestamp)))) ""))
+             (help-text (concat "Click or RET to enter this value" timestamp-text)))
         (insert (propertize (truncate-string-to-width key-str left-col-width 0 ?\s)
                             'face 'font-lock-keyword-face
                             'data-navigator-key key
@@ -515,15 +499,16 @@ This ensures deeper navigation works with raw data."
   "Get child KEY from NODE.
 - If NODE is a hash-table, KEY should be a hash key.
 - If NODE is a vector or a list, KEY should be an integer index."
-  (cond
-   ((hash-table-p node)
-    (gethash key node))
-   ((vectorp node)
-    (when (and (integerp key) (>= key 0) (< key (length node)))
-      (aref node key)))
-   ((consp node)
-    (when (integerp key)
-      (nth key node)))))
+  (data-navigator--unwrap-node
+   (cond
+    ((hash-table-p node)
+     (gethash key node))
+    ((vectorp node)
+     (when (and (integerp key) (>= key 0) (< key (length node)))
+       (aref node key)))
+    ((consp node)
+     (when (integerp key)
+       (nth key node))))))
 
 (defun data-navigator--get-node (path data)
   "Get the node at PATH in DATA."
@@ -533,8 +518,7 @@ This ensures deeper navigation works with raw data."
 
 (defun data-navigator--node-entries (node)
   "Return entries of NODE as a flat list [k1 v1 k2 v2 ...].
-Always treat lists as indexed sequences. 
-This ensures that EDN lists are handled uniformly, just like vectors."
+Always treat lists as indexed sequences."
   (cond
    ((null node) nil)
    ((hash-table-p node)
@@ -547,7 +531,6 @@ This ensures that EDN lists are handled uniformly, just like vectors."
     (cl-loop for i from 0 below (length node)
              append (list i (aref node i))))
    ((consp node)
-    ;; Treat all lists as indexed sequences:
     (cl-loop for val in node
              for i from 0
              append (list i val)))
@@ -562,7 +545,7 @@ This ensures that EDN lists are handled uniformly, just like vectors."
         (goto-char (point-min))
         (data-navigator--set-header-line)
         (let ((node (if (null data-navigator--path)
-                        (if data-navigator--top-level-entered
+                        (if data-navigator--in-entry
                             nil
                           data-navigator--current-data)
                       (data-navigator--get-node data-navigator--path data-navigator--current-data))))
@@ -574,13 +557,13 @@ This ensures that EDN lists are handled uniformly, just like vectors."
             (setq node (plist-get node :data-navigator--data)))
           (if (null data-navigator--path)
               (cond
-               ((not data-navigator--top-level-entered)
+               ((not data-navigator--in-entry)
                 (let* ((entries (data-navigator--node-entries data-navigator--current-data))
                        (filtered (data-navigator--filter-entries entries)))
                   ;; Convert [k1 v1 k2 v2 ...] into ((k1 v1) (k2 v2) ...)
                   (let ((pairs (cl-loop for (k v) on filtered by #'cddr collect (list k v))))
-                    ;; Sort by timestamp if data-navigator-entries-direction is 'prepend
-                    (when (eq data-navigator-entries-direction 'prepend)
+                    ;; Sort by timestamp if data-navigator-top-level-display-order is 'bottom-up
+                    (when (eq data-navigator-top-level-display-order 'bottom-up)
                       (setq pairs (sort pairs
                                         (lambda (a b)
                                           (let ((ta (plist-get (cadr a) :data-navigator--timestamp))
@@ -589,7 +572,7 @@ This ensures that EDN lists are handled uniformly, just like vectors."
                     ;; Flatten pairs back into [k1 v1 k2 v2 ...]
                     (setq filtered (apply #'append pairs))
                     (data-navigator--insert-entries filtered))))
-               (t (data-navigator--insert-line (or data-navigator--filename data-navigator-root-label) node)))
+               (t (data-navigator--insert-line (or data-navigator--source data-navigator-root-label) node)))
             (when node
               (let* ((entries (data-navigator--node-entries node))
                      (filtered (data-navigator--filter-entries entries)))
@@ -601,56 +584,24 @@ This ensures that EDN lists are handled uniformly, just like vectors."
   "Clear the `data-navigator` buffer."
   (interactive)
   (with-current-buffer (get-buffer data-navigator-buffer-name)
-    (setq-local data-navigator--current-data nil)
-    (setq-local data-navigator--filename nil
+    (setq-local data-navigator--current-data (make-vector 0 nil)
+                data-navigator--source nil
+                data-navigator--format nil
                 data-navigator--path nil
-                data-navigator--top-level-entered nil)
-    (data-navigator--stop-auto-refresh)
+                data-navigator--in-entry nil)
     (data-navigator--draw)))
 
-(defun data-navigator--insert-parsed-data (parsed)
-  "Insert PARSED data into `data-navigator--current-data` with a timestamp."
-  (unless data-navigator--current-data
-    (setq data-navigator--current-data (make-vector 0 nil)))
+(defun data-navigator--annotate-data (data)
+  "Annotate DATA with the current timestamp."
   (let* ((timestamp (float-time))
          (annotated (mapcar (lambda (item)
-                              (list :data-navigator--data item :data-navigator--timestamp timestamp))
-                            (append parsed nil)))
+                              (list :data-navigator--data item
+                                    :data-navigator--timestamp timestamp
+                                    :data-navigator--source data-navigator--source
+                                    :data-navigator--format data-navigator--format))
+                            (append data nil)))
          (annotated-vector (vconcat annotated)))
-    (setq-local data-navigator--current-data (vconcat data-navigator--current-data annotated-vector))))
-
-;;;###autoload
-(defun data-navigator-from-input (input &optional source-type filename)
-  "Start `data-navigator-mode` using INPUT (a string of EDN/JSON).
-SOURCE-TYPE can be 'file, or 'input.
-FILENAME is optional and used for display if SOURCE-TYPE is 'file'.
-If called interactively, prompts for INPUT."
-  (interactive "sEnter data (EDN/JSON): ")
-  (let ((buf (get-buffer-create data-navigator-buffer-name)))
-    (with-current-buffer buf
-      (unless (eq major-mode 'data-navigator-mode)
-        (data-navigator-mode))
-      (let ((parsed (data-navigator--parse-string input)))
-        (goto-char (point-min))
-        (let ((inhibit-read-only t))
-          (erase-buffer))
-        (data-navigator--insert-parsed-data parsed)
-        (setq-local data-navigator--buffer-type (or source-type 'input))
-        (when filename
-          (setq-local data-navigator--filename filename))
-        (setq-local data-navigator--path nil)
-        (setq-local data-navigator--top-level-entered nil)
-        (data-navigator--stop-auto-refresh)
-        (data-navigator--draw)))))
-
-;;;###autoload
-(defun data-navigator-from-file (&optional filename)
-  "Start `data-navigator-mode` using FILENAME."
-  (interactive "fFile: ")
-  (let ((input (with-temp-buffer
-                 (insert-file-contents filename)
-                 (buffer-string))))
-    (data-navigator-from-input input 'file (file-name-nondirectory filename))))
+    (vconcat data-navigator--current-data annotated-vector)))
 
 ;;;###autoload
 (defun data-navigator ()
@@ -661,13 +612,32 @@ If called interactively, prompts for INPUT."
     (with-current-buffer buf
       (let ((inhibit-read-only t))
         (erase-buffer))
-      (data-navigator-mode)
-      (setq-local data-navigator--current-data (make-vector 0 nil))
-      (setq-local data-navigator--filename nil)
-      (setq-local data-navigator--path nil)
-      (setq-local data-navigator--top-level-entered nil)
-      (data-navigator--stop-auto-refresh)
+      (unless (eq major-mode 'data-navigator-mode)
+        (data-navigator-mode))
       (data-navigator--draw))))
+
+;;;###autoload
+(defun data-navigator-from-input (input &optional source)
+  "Start `data-navigator-mode` using INPUT (a string of EDN/JSON).
+SOURCE can be any string that identifies where the data is coming from."
+  (interactive "sEnter data (EDN/JSON): ")
+  (data-navigator)
+  (let ((buf (get-buffer data-navigator-buffer-name)))
+    (with-current-buffer buf
+      (let ((parsed (data-navigator--parse-string input)))
+        (goto-char (point-min))
+        (let ((inhibit-read-only t))
+          (erase-buffer))
+        (setq-local data-navigator--source (or source 'input))
+        (setq-local data-navigator--current-data (data-navigator--annotate-data parsed))
+        (data-navigator--draw)))))
+
+;;;###autoload
+(defun data-navigator-from-file (&optional filename)
+  "Start `data-navigator-mode` using FILENAME."
+  (interactive "fFile: ")
+  (let ((input (with-temp-buffer (insert-file-contents filename) (buffer-string))))
+    (data-navigator-from-input input (file-name-nondirectory filename))))
 
 ;;;###autoload
 (define-derived-mode data-navigator-mode special-mode "Data-Navigator"
